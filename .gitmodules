@@ -1,0 +1,12 @@
+[submodule "upstream/preact"]
+	path = upstream/preact
+	url = https://github.com/preactjs/preact.git
+[submodule "upstream/signals"]
+	path = upstream/signals
+	url = https://github.com/preactjs/signals.git
+[submodule "upstream/preact-iso"]
+	path = upstream/preact-iso
+	url = https://github.com/preactjs/preact-iso.git
+[submodule "upstream/preact-render-to-string"]
+	path = upstream/preact-render-to-string
+	url = https://github.com/preactjs/preact-render-to-string.git

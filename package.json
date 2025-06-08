@@ -1,0 +1,19 @@
+{
+  "name": "preact-uno",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "preact": "file:./packages/preact",
+    "@preact/signals-core": "file:./packages/signals-core",
+    "@preact/signals": "file:./packages/signals-preact",
+    "preact-render-to-string": "file:./packages/preact-render-to-string",
+    "preact-iso": "file:./packages/preact-iso"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
