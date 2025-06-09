@@ -826,7 +826,6 @@ async function resolveRelativeImports(packagesDir: string): Promise<void> {
 
   const transpiler = new Bun.Transpiler({
     loader: "tsx",
-    target: "esnext",
   })
 
   // Find all JavaScript/TypeScript files
@@ -936,15 +935,14 @@ async function resolveRelativeImports(packagesDir: string): Promise<void> {
             relativePath = "./" + relativePath
           }
 
-          // Remove file extensions for JS/TS imports (Bun handles this automatically)
-          // But keep .d.ts extensions as they're sometimes needed
-          const ext = NPath.extname(relativePath).toLowerCase()
-          if (
-            [".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"].includes(ext)
-            && !relativePath.endsWith(".d.ts")
-          ) {
-            relativePath = relativePath.slice(0, -ext.length)
-          }
+          // Keep file extensions - don't remove them
+          // const ext = NPath.extname(relativePath).toLowerCase()
+          // if (
+          //   [".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"].includes(ext)
+          //   && !relativePath.endsWith(".d.ts")
+          // ) {
+          //   relativePath = relativePath.slice(0, -ext.length)
+          // }
 
           // Only replace if the resolved path is different
           if (relativePath !== imp.path) {
@@ -1014,6 +1012,423 @@ async function resolveRelativeImports(packagesDir: string): Promise<void> {
 
   console.log("━".repeat(50))
   console.log(`✅ Import resolution completed:`)
+  console.log(`  📊 Total files processed: ${processedCount}`)
+  console.log(`  ✏️  Files modified: ${modifiedCount}`)
+  console.log(`  📁 Files unchanged: ${processedCount - modifiedCount}`)
+}
+
+/**
+ * Replace imports of upstream dependencies with relative paths
+ * This function scans all files in the packages directory and replaces imports
+ * of packages that exist in our upstream packages with relative paths
+ */
+async function replaceUpstreamImports(
+  packagesDir: string,
+  packageNameToDir: Map<string, string>,
+): Promise<void> {
+  console.log(
+    "\n🔄 Replacing upstream dependency imports with relative paths...",
+  )
+  console.log("━".repeat(50))
+
+  const transpiler = new Bun.Transpiler({
+    loader: "tsx",
+  })
+
+  // First, we need to remove upstream dependencies from all package.json files
+  console.log("📦 Removing upstream dependencies from package.json files...")
+
+  // Get all package.json files in packages directory
+  const packageJsonFiles: string[] = []
+
+  async function findPackageJsonFiles(dir: string) {
+    const entries = await NFS.promises.readdir(dir, { withFileTypes: true })
+
+    for (const entry of entries) {
+      const fullPath = NPath.join(dir, entry.name)
+
+      if (entry.isDirectory() && entry.name !== "node_modules") {
+        await findPackageJsonFiles(fullPath)
+      } else if (entry.isFile() && entry.name === "package.json") {
+        packageJsonFiles.push(fullPath)
+      }
+    }
+  }
+
+  await findPackageJsonFiles(packagesDir)
+
+  // Remove upstream dependencies from each package.json
+  for (const packageJsonPath of packageJsonFiles) {
+    try {
+      const content = await Bun.file(packageJsonPath).text()
+      const packageJson = JSON.parse(content)
+      let modified = false
+
+      // Check and remove from dependencies
+      if (packageJson.dependencies) {
+        for (const depName of Object.keys(packageJson.dependencies)) {
+          if (packageNameToDir.has(depName)) {
+            console.log(
+              `  🗑️  Removing dependency "${depName}" from ${
+                NPath.relative(packagesDir, packageJsonPath)
+              }`,
+            )
+            delete packageJson.dependencies[depName]
+            modified = true
+          }
+        }
+
+        // Remove dependencies object if empty
+        if (Object.keys(packageJson.dependencies).length === 0) {
+          delete packageJson.dependencies
+        }
+      }
+
+      // Check and remove from devDependencies
+      if (packageJson.devDependencies) {
+        for (const depName of Object.keys(packageJson.devDependencies)) {
+          if (packageNameToDir.has(depName)) {
+            console.log(
+              `  🗑️  Removing devDependency "${depName}" from ${
+                NPath.relative(packagesDir, packageJsonPath)
+              }`,
+            )
+            delete packageJson.devDependencies[depName]
+            modified = true
+          }
+        }
+
+        // Remove devDependencies object if empty
+        if (Object.keys(packageJson.devDependencies).length === 0) {
+          delete packageJson.devDependencies
+        }
+      }
+
+      if (modified) {
+        await Bun.write(packageJsonPath, JSON.stringify(packageJson, null, 2))
+        console.log(
+          `  ✅ Updated ${NPath.relative(packagesDir, packageJsonPath)}`,
+        )
+      }
+    } catch (error) {
+      console.error(
+        `❌ Error processing ${
+          NPath.relative(packagesDir, packageJsonPath)
+        }: ${error}`,
+      )
+    }
+  }
+
+  // Find all JavaScript/TypeScript files
+  const jstsFiles: string[] = []
+
+  async function findFiles(dir: string) {
+    const entries = await NFS.promises.readdir(dir, { withFileTypes: true })
+
+    for (const entry of entries) {
+      const fullPath = NPath.join(dir, entry.name)
+
+      if (entry.isDirectory()) {
+        // Skip node_modules directories
+        if (entry.name === "node_modules") continue
+        await findFiles(fullPath)
+      } else if (entry.isFile()) {
+        // Check for JS/TS files
+        const ext = NPath.extname(entry.name).toLowerCase()
+        if ([".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"].includes(ext)) {
+          jstsFiles.push(fullPath)
+        }
+      }
+    }
+  }
+
+  await findFiles(packagesDir)
+  console.log(
+    `\n📋 Found ${jstsFiles.length} JavaScript/TypeScript files to process for upstream imports`,
+  )
+
+  let processedCount = 0
+  let modifiedCount = 0
+
+  for (const filePath of jstsFiles) {
+    try {
+      const content = await Bun.file(filePath).text()
+      const fileDir = NPath.dirname(filePath)
+
+      // Use Bun.Transpiler to scan for imports
+      const imports = transpiler.scanImports(content)
+
+      let modified = false
+      let newContent = content
+
+      // Process each import found
+      for (const imp of imports) {
+        // Skip relative imports
+        if (imp.path.startsWith(".")) continue
+
+        // Check if this import is for one of our upstream packages
+        const pathParts = imp.path.split("/")
+        if (pathParts.length === 0) continue
+
+        const packageName = pathParts[0]
+        if (!packageName) continue
+
+        const fullPackageName = imp
+            .path
+            .startsWith("@") && pathParts.length >= 2
+          ? pathParts.slice(0, 2).join("/")
+          : packageName
+
+        if (packageNameToDir.has(fullPackageName)) {
+          const targetDirName = packageNameToDir.get(fullPackageName)!
+          const targetPackageDir = NPath.join(packagesDir, targetDirName)
+
+          // Handle subpath imports (e.g., "preact/hooks" -> "./preact/hooks")
+          const subpath = imp.path.substring(fullPackageName.length)
+
+          try {
+            // Try to resolve the import to find the actual file
+            let resolvedPath: string | null = null
+
+            if (subpath) {
+              // For subpath imports, try to resolve within the target package
+              const subpathWithoutSlash = subpath.startsWith("/")
+                ? subpath.substring(1)
+                : subpath
+
+              // First, check if there's a matching export in the target package.json
+              const targetPackageJsonPath = NPath.join(
+                targetPackageDir,
+                "package.json",
+              )
+              if (NFS.existsSync(targetPackageJsonPath)) {
+                const targetPackageJson = JSON.parse(
+                  await Bun.file(targetPackageJsonPath).text(),
+                )
+
+                // Check if there's an export for this subpath
+                if (targetPackageJson.exports) {
+                  const exportKey = `./${subpathWithoutSlash}`
+                  const exportEntry = targetPackageJson.exports[exportKey]
+
+                  if (exportEntry) {
+                    if (typeof exportEntry === "string") {
+                      resolvedPath = NPath.join(targetPackageDir, exportEntry)
+                    } else if (typeof exportEntry === "object") {
+                      // Try different conditions in order of preference
+                      const conditions = ["import", "browser", "default"]
+                      for (const condition of conditions) {
+                        if (exportEntry[condition]) {
+                          resolvedPath = NPath.join(
+                            targetPackageDir,
+                            exportEntry[condition],
+                          )
+                          break
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+
+              // If not found in exports, try common patterns
+              if (!resolvedPath) {
+                // Try different file extensions and patterns
+                const patterns = [
+                  // Direct file match
+                  subpathWithoutSlash,
+                  `${subpathWithoutSlash}.ts`,
+                  `${subpathWithoutSlash}.tsx`,
+                  `${subpathWithoutSlash}.js`,
+                  `${subpathWithoutSlash}.jsx`,
+                  `${subpathWithoutSlash}.mjs`,
+                  `${subpathWithoutSlash}.cjs`,
+                  // Index files in subdirectory
+                  `${subpathWithoutSlash}/index.ts`,
+                  `${subpathWithoutSlash}/index.tsx`,
+                  `${subpathWithoutSlash}/index.js`,
+                  `${subpathWithoutSlash}/index.jsx`,
+                  `${subpathWithoutSlash}/index.mjs`,
+                  `${subpathWithoutSlash}/index.cjs`,
+                  // Source directory patterns
+                  `${subpathWithoutSlash}/src/index.ts`,
+                  `${subpathWithoutSlash}/src/index.tsx`,
+                  `${subpathWithoutSlash}/src/index.js`,
+                  `${subpathWithoutSlash}/src/index.jsx`,
+                ]
+
+                for (const pattern of patterns) {
+                  const testPath = NPath.join(targetPackageDir, pattern)
+                  if (
+                    NFS.existsSync(testPath) && NFS.statSync(testPath).isFile()
+                  ) {
+                    resolvedPath = testPath
+                    break
+                  }
+                }
+              }
+            } else {
+              // For main package imports, try to resolve using package.json exports or main field
+              const targetPackageJsonPath = NPath.join(
+                targetPackageDir,
+                "package.json",
+              )
+              if (NFS.existsSync(targetPackageJsonPath)) {
+                const targetPackageJson = JSON.parse(
+                  await Bun.file(targetPackageJsonPath).text(),
+                )
+
+                // Try to find the main entry point
+                if (targetPackageJson.exports) {
+                  if (typeof targetPackageJson.exports === "string") {
+                    resolvedPath = NPath.join(
+                      targetPackageDir,
+                      targetPackageJson.exports,
+                    )
+                  } else if (targetPackageJson.exports["."]) {
+                    const exportValue = targetPackageJson.exports["."]
+                    if (typeof exportValue === "string") {
+                      resolvedPath = NPath.join(targetPackageDir, exportValue)
+                    } else if (exportValue.import) {
+                      resolvedPath = NPath.join(
+                        targetPackageDir,
+                        exportValue.import,
+                      )
+                    } else if (exportValue.browser) {
+                      resolvedPath = NPath.join(
+                        targetPackageDir,
+                        exportValue.browser,
+                      )
+                    }
+                  }
+                }
+
+                // Fallback to common entry points
+                if (!resolvedPath) {
+                  const entryPoints = [
+                    "./src/index.ts",
+                    "./src/index.tsx",
+                    "./src/index.js",
+                    "./src/index.jsx",
+                    "./index.ts",
+                    "./index.tsx",
+                    "./index.js",
+                    "./index.jsx",
+                  ]
+
+                  for (const entry of entryPoints) {
+                    const testPath = NPath.join(targetPackageDir, entry)
+                    if (NFS.existsSync(testPath)) {
+                      resolvedPath = testPath
+                      break
+                    }
+                  }
+                }
+              }
+            }
+
+            if (!resolvedPath) {
+              // If we couldn't resolve to a specific file, check if it's a bare import
+              // that should resolve to the package root
+              if (!subpath) {
+                // For main package imports, point to the package directory
+                resolvedPath = targetPackageDir
+              } else {
+                // For subpath imports that couldn't be resolved, log a warning
+                console.warn(
+                  `  ⚠️  Could not resolve subpath "${subpath}" for package "${fullPackageName}". Import path: "${imp.path}"`,
+                )
+                continue
+              }
+            }
+
+            // Convert to relative path from the current file
+            let relativePath = NPath.relative(fileDir, resolvedPath)
+
+            // Ensure the path starts with ./ or ../
+            if (!relativePath.startsWith(".")) {
+              relativePath = "./" + relativePath
+            }
+
+            // Keep file extensions - don't remove them
+            // const ext = NPath.extname(relativePath).toLowerCase()
+            // if ([".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"].includes(ext)) {
+            //   relativePath = relativePath.slice(0, -ext.length)
+            // }
+
+            // Create regex patterns to match the import
+            const importRegex = new RegExp(
+              `(from\\s+['"\`])(${
+                imp.path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+              })(['"\`])`,
+              "g",
+            )
+
+            const dynamicImportRegex = new RegExp(
+              `(import\\s*\\(\\s*['"\`])(${
+                imp.path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+              })(['"\`]\\s*\\))`,
+              "g",
+            )
+
+            const requireRegex = new RegExp(
+              `(require\\s*\\(\\s*['"\`])(${
+                imp.path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+              })(['"\`]\\s*\\))`,
+              "g",
+            )
+
+            const beforeReplace = newContent
+            newContent = newContent.replace(importRegex, `$1${relativePath}$3`)
+            newContent = newContent.replace(
+              dynamicImportRegex,
+              `$1${relativePath}$3`,
+            )
+            newContent = newContent.replace(requireRegex, `$1${relativePath}$3`)
+
+            if (newContent !== beforeReplace) {
+              console.log(
+                `  📝 ${
+                  NPath.relative(packagesDir, filePath)
+                }: "${imp.path}" → "${relativePath}"`,
+              )
+              modified = true
+            }
+          } catch (resolveError) {
+            console.warn(
+              `  ⚠️  Could not resolve upstream import "${imp.path}" in ${
+                NPath.relative(packagesDir, filePath)
+              }: ${resolveError}`,
+            )
+          }
+        }
+      }
+
+      // Write the file back if it was modified
+      if (modified) {
+        await Bun.write(filePath, newContent)
+        modifiedCount++
+      }
+
+      processedCount++
+
+      // Show progress every 10 files
+      if (processedCount % 10 === 0) {
+        console.log(
+          `  ⏳ Processed ${processedCount}/${jstsFiles.length} files...`,
+        )
+      }
+    } catch (error) {
+      console.error(
+        `❌ Error processing ${
+          NPath.relative(packagesDir, filePath)
+        }: ${error}`,
+      )
+    }
+  }
+
+  console.log("━".repeat(50))
+  console.log(`✅ Upstream import replacement completed:`)
   console.log(`  📊 Total files processed: ${processedCount}`)
   console.log(`  ✏️  Files modified: ${modifiedCount}`)
   console.log(`  📁 Files unchanged: ${processedCount - modifiedCount}`)
@@ -1092,6 +1507,9 @@ async function main() {
 
   // Resolve all relative imports in the copied files
   await resolveRelativeImports(packagesDirPath)
+
+  // Replace upstream imports with relative paths
+  await replaceUpstreamImports(packagesDirPath, packageNameToDir)
 
   // Final summary
   console.log(`\n📊 Final Summary:`)

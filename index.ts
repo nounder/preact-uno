@@ -41,7 +41,7 @@ export {
   type RenderableProps,
   toChildArray,
   type VNode,
-} from "preact"
+} from "./packages/preact/src/index.js"
 
 export {
   type CreateHandle,
@@ -62,7 +62,7 @@ export {
   useReducer,
   useRef,
   useState,
-} from "preact/hooks"
+} from "./packages/preact/hooks/src/index.js"
 
 export {
   batch,
@@ -75,12 +75,11 @@ export {
   useComputed,
   useSignal,
   useSignalEffect,
-} from "@preact/signals"
+} from "./packages/signals-preact/src/index.ts"
 
 export {
   type ArbitraryProps,
   ErrorBoundary,
-  exec as routeExec,
   hydrate as isoHydrate,
   type KnownProps,
   lazy,
@@ -96,14 +95,21 @@ export {
   Router,
   useLocation,
   useRoute,
-} from "preact-iso"
+} from "./packages/preact-iso/src/index.js"
+
+export {
+  For,
+  Show,
+  useLiveSignal,
+  useSignalRef,
+} from "./packages/signals-preact/utils/src/index.ts"
 
 export {
   renderToStaticMarkup,
   renderToString,
   renderToStringAsync,
-} from "preact-render-to-string"
+} from "./packages/preact-render-to-string/src/index.js"
 
 export {
   renderToReadableStream,
-} from "preact-render-to-string/stream"
+} from "./packages/preact-render-to-string/src/stream.js"
