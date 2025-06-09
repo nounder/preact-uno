@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
-import * as NFS from "fs"
-import * as NPath from "path"
+import * as NFS from "node:fs"
+import * as NPath from "node:path"
 
 const Packages = [
   "./upstream/preact",
@@ -344,6 +344,18 @@ function transformExportsField(
               }
             }
           }
+        }
+
+        // Remove browser condition if it's the same as import condition
+        if (
+          transformedConditions.browser
+          && transformedConditions.import
+          && transformedConditions.browser === transformedConditions.import
+        ) {
+          console.log(
+            `  🧹 Removing duplicate browser condition for "${key}" (same as import: "${transformedConditions.import}")`,
+          )
+          delete transformedConditions.browser
         }
 
         // Only include the key if it has supported conditions
