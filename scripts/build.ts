@@ -221,6 +221,13 @@ function transformExportsField(
       }
     }
 
+    // Log warning when no source file could be found
+    console.warn(
+      `  ⚠️  No source file found for export "${exportKey}" with export values: ${
+        JSON.stringify(exportValues)
+      }`,
+    )
+
     return null
   }
 
