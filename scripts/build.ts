@@ -816,6 +816,209 @@ async function copyPackageToPackagesDir(
   return true
 }
 
+/**
+ * Process all JavaScript/TypeScript files in the packages directory and resolve relative imports
+ * using Bun.Transpiler to scan imports and Bun.resolveSync to resolve paths
+ */
+async function resolveRelativeImports(packagesDir: string): Promise<void> {
+  console.log("\n🔄 Resolving relative imports in all exported files...")
+  console.log("━".repeat(50))
+
+  const transpiler = new Bun.Transpiler({
+    loader: "tsx",
+    target: "esnext",
+  })
+
+  // Find all JavaScript/TypeScript files
+  const jstsFiles: string[] = []
+
+  async function findFiles(dir: string) {
+    const entries = await NFS.promises.readdir(dir, { withFileTypes: true })
+
+    for (const entry of entries) {
+      const fullPath = NPath.join(dir, entry.name)
+
+      if (entry.isDirectory()) {
+        // Skip node_modules directories
+        if (entry.name === "node_modules") continue
+        await findFiles(fullPath)
+      } else if (entry.isFile()) {
+        // Check for JS/TS files
+        const ext = NPath.extname(entry.name).toLowerCase()
+        if ([".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"].includes(ext)) {
+          jstsFiles.push(fullPath)
+        }
+      }
+    }
+  }
+
+  await findFiles(packagesDir)
+  console.log(
+    `📋 Found ${jstsFiles.length} JavaScript/TypeScript files to process`,
+  )
+
+  let processedCount = 0
+  let modifiedCount = 0
+
+  for (const filePath of jstsFiles) {
+    try {
+      const content = await Bun.file(filePath).text()
+      const fileDir = NPath.dirname(filePath)
+
+      // Use Bun.Transpiler to scan for imports
+      const imports = transpiler.scanImports(content)
+
+      let modified = false
+      let newContent = content
+
+      // Process each import found
+      for (const imp of imports) {
+        // Only process relative imports
+        if (!imp.path.startsWith(".")) continue
+
+        try {
+          // Try to resolve the import path relative to the file's directory
+          let resolvedPath: string | null = null
+
+          // First try to resolve as-is
+          try {
+            resolvedPath = Bun.resolveSync(imp.path, fileDir)
+          } catch (e) {
+            // If that fails, try common extensions
+            const extensions = [
+              ".ts",
+              ".tsx",
+              ".js",
+              ".jsx",
+              ".mjs",
+              ".cjs",
+              ".d.ts",
+            ]
+            for (const ext of extensions) {
+              try {
+                resolvedPath = Bun.resolveSync(imp.path + ext, fileDir)
+                break
+              } catch (e2) {
+                // Continue trying other extensions
+              }
+            }
+
+            // If still not found, try index files
+            if (!resolvedPath) {
+              const indexExtensions = [
+                "/index.ts",
+                "/index.tsx",
+                "/index.js",
+                "/index.jsx",
+                "/index.mjs",
+                "/index.cjs",
+              ]
+              for (const indexExt of indexExtensions) {
+                try {
+                  resolvedPath = Bun.resolveSync(imp.path + indexExt, fileDir)
+                  break
+                } catch (e3) {
+                  // Continue trying other index extensions
+                }
+              }
+            }
+          }
+
+          if (!resolvedPath) {
+            throw new Error(`Could not resolve import "${imp.path}"`)
+          }
+
+          // Convert back to relative path from the file's location
+          let relativePath = NPath.relative(fileDir, resolvedPath)
+
+          // Ensure the path starts with ./ or ../
+          if (!relativePath.startsWith(".")) {
+            relativePath = "./" + relativePath
+          }
+
+          // Remove file extensions for JS/TS imports (Bun handles this automatically)
+          // But keep .d.ts extensions as they're sometimes needed
+          const ext = NPath.extname(relativePath).toLowerCase()
+          if (
+            [".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"].includes(ext)
+            && !relativePath.endsWith(".d.ts")
+          ) {
+            relativePath = relativePath.slice(0, -ext.length)
+          }
+
+          // Only replace if the resolved path is different
+          if (relativePath !== imp.path) {
+            // Create a regex to match the exact import statement
+            const importRegex = new RegExp(
+              `(from\\s+['"\`])(${
+                imp.path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+              })(['"\`])`,
+              "g",
+            )
+
+            const dynamicImportRegex = new RegExp(
+              `(import\\s*\\(\\s*['"\`])(${
+                imp.path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+              })(['"\`]\\s*\\))`,
+              "g",
+            )
+
+            const beforeReplace = newContent
+            newContent = newContent.replace(importRegex, `$1${relativePath}$3`)
+            newContent = newContent.replace(
+              dynamicImportRegex,
+              `$1${relativePath}$3`,
+            )
+
+            if (newContent !== beforeReplace) {
+              console.log(
+                `  📝 ${
+                  NPath.relative(packagesDir, filePath)
+                }: "${imp.path}" → "${relativePath}"`,
+              )
+              modified = true
+            }
+          }
+        } catch (resolveError) {
+          // If we can't resolve the import, log a warning but continue
+          console.warn(
+            `  ⚠️  Could not resolve import "${imp.path}" in ${
+              NPath.relative(packagesDir, filePath)
+            }: ${resolveError}`,
+          )
+        }
+      }
+
+      // Write the file back if it was modified
+      if (modified) {
+        await Bun.write(filePath, newContent)
+        modifiedCount++
+      }
+
+      processedCount++
+
+      // Show progress every 10 files
+      if (processedCount % 10 === 0) {
+        console.log(
+          `  ⏳ Processed ${processedCount}/${jstsFiles.length} files...`,
+        )
+      }
+    } catch (error) {
+      console.error(
+        `❌ Error processing ${
+          NPath.relative(packagesDir, filePath)
+        }: ${error}`,
+      )
+    }
+  }
+
+  console.log("━".repeat(50))
+  console.log(`✅ Import resolution completed:`)
+  console.log(`  📊 Total files processed: ${processedCount}`)
+  console.log(`  ✏️  Files modified: ${modifiedCount}`)
+  console.log(`  📁 Files unchanged: ${processedCount - modifiedCount}`)
+}
+
 // Main execution
 async function main() {
   console.log(`🚀 Starting copy process for all packages to ${PackagesDir}`)
@@ -886,6 +1089,9 @@ async function main() {
   } catch (error) {
     console.error("Could not list final structure")
   }
+
+  // Resolve all relative imports in the copied files
+  await resolveRelativeImports(packagesDirPath)
 
   // Final summary
   console.log(`\n📊 Final Summary:`)
