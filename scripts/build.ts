@@ -129,7 +129,9 @@ function transformExportsField(
     if (exportKey !== "." && exportKey.startsWith("./")) {
       const literalPath = exportKey
       const fullLiteralPath = NPath.resolve(packageDir, literalPath)
-      if (NFS.existsSync(fullLiteralPath)) {
+      const stat = NFS.existsSync(fullLiteralPath)
+        && NFS.statSync(fullLiteralPath)
+      if (stat && stat.isFile()) {
         console.log(
           `  📄 Found literal file: "${literalPath}" for export "${exportKey}"`,
         )
