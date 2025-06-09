@@ -46,6 +46,19 @@ interface PackageInfo {
   packageJsonName: string
 }
 
+interface TypeScriptConfig {
+  extends?: string
+  references?: Array<{
+    path: string
+    [key: string]: any
+  }>
+  compilerOptions?: {
+    typeRoots?: string[]
+    [key: string]: any
+  }
+  [key: string]: any
+}
+
 function extractFilePaths(files: string[]): string[] {
   const paths: Set<string> = new Set()
 
@@ -112,6 +125,18 @@ function transformExportsField(
     exportKey: string,
     exportValues?: string | string[],
   ): string | null {
+    // First, check if the export key refers to a literal file that exists
+    if (exportKey !== "." && exportKey.startsWith("./")) {
+      const literalPath = exportKey
+      const fullLiteralPath = NPath.resolve(packageDir, literalPath)
+      if (NFS.existsSync(fullLiteralPath)) {
+        console.log(
+          `  📄 Found literal file: "${literalPath}" for export "${exportKey}"`,
+        )
+        return literalPath
+      }
+    }
+
     // Collect all export value paths
     const valuePaths: string[] = []
     if (exportValues) {
@@ -170,6 +195,8 @@ function transformExportsField(
         ...indexFiles.map(f => `./${subPath}/src/${f}`),
         ...indexFiles.map(f => `./${subPath}/${f}`),
         ...sourceExtensions.map(ext => `./${subPath}${ext}`),
+        // Check for source files in src directory named after the export key
+        ...sourceExtensions.map(ext => `./src/${subPath}${ext}`),
       ]
 
       for (const pattern of keyPatterns) {
@@ -327,6 +354,124 @@ function transformExportsField(
   }
 
   return exports
+}
+
+/**
+ * Validates path references in TypeScript/JavaScript configuration files.
+ *
+ * Ensures that all external path references in tsconfig.json or jsconfig.json
+ * files point to existing files or directories. This prevents broken configurations when
+ * packages are copied to standalone directories.
+ *
+ * @param config - Parsed TypeScript/JavaScript configuration object
+ * @param packageDir - Base directory to resolve relative paths from
+ * @param configFileName - Name of the config file being validated (for logging)
+ *
+ * Validates the following fields:
+ * - `extends`: Must point to an existing configuration file
+ * - `references`: Each reference must point to a directory with a tsconfig.json file
+ * - `compilerOptions.typeRoots`: Each path must point to an existing directory
+ *   (supports wildcard patterns by checking the base directory)
+ *
+ * @throws {Error} If any referenced path does not exist or is invalid
+ */
+async function validateConfigPaths(
+  config: TypeScriptConfig,
+  packageDir: string,
+  configFileName: string,
+): Promise<void> {
+  console.log(`🔍 Validating paths in ${configFileName}...`)
+
+  // Validate 'extends' field - should point to an existing config file
+  if (config.extends) {
+    const extendsPath = config.extends as string
+    console.log(`  📋 Checking extends: "${extendsPath}"`)
+    const resolvedPath = NPath.resolve(packageDir, extendsPath)
+    const extendsStat = await NFS.promises.stat(resolvedPath).catch(() => null)
+    if (!extendsStat) {
+      throw new Error(
+        `❌ Config file extends path does not exist: "${extendsPath}" (resolved to: ${resolvedPath})`,
+      )
+    }
+    console.log(`  ✅ Extends path exists: "${extendsPath}"`)
+  }
+
+  // Validate 'references' field - should point to existing directories with tsconfig.json
+  if (config.references && Array.isArray(config.references)) {
+    console.log(
+      `  📋 Checking ${config.references.length} project references...`,
+    )
+    for (const ref of config.references) {
+      if (ref.path) {
+        const refPath = NPath.resolve(packageDir, ref.path)
+        const refConfigPath = NPath.join(refPath, "tsconfig.json")
+
+        const refStat = await NFS.promises.stat(refPath).catch(() => null)
+        if (!refStat) {
+          throw new Error(
+            `❌ Project reference directory does not exist: "${ref.path}" (resolved to: ${refPath})`,
+          )
+        }
+
+        const refConfigStat = await NFS.promises.stat(refConfigPath).catch(() =>
+          null
+        )
+        if (!refConfigStat) {
+          throw new Error(
+            `❌ Project reference tsconfig.json does not exist: "${ref.path}/tsconfig.json" (resolved to: ${refConfigPath})`,
+          )
+        }
+
+        console.log(`  ✅ Reference path exists: "${ref.path}"`)
+      }
+    }
+  }
+
+  // Validate 'compilerOptions.typeRoots' field - should point to existing directories
+  if (
+    config.compilerOptions?.typeRoots
+    && Array.isArray(config.compilerOptions.typeRoots)
+  ) {
+    console.log(
+      `  📋 Checking ${config.compilerOptions.typeRoots.length} typeRoots...`,
+    )
+    for (const typeRoot of config.compilerOptions.typeRoots) {
+      // Handle wildcard patterns by checking the base directory
+      let pathToCheck = typeRoot
+      if (pathToCheck.includes("*")) {
+        // For patterns like "./types/*" or "./node_modules/@types", check the base directory
+        const basePath = pathToCheck.split("*")[0]
+        if (basePath) {
+          pathToCheck = basePath.replace(/\/$/, "")
+        }
+        console.log(
+          `  📋 Checking wildcard typeRoot base directory: "${pathToCheck}"`,
+        )
+      } else {
+        console.log(`  📋 Checking typeRoot directory: "${pathToCheck}"`)
+      }
+
+      const typeRootPath = NPath.resolve(packageDir, pathToCheck)
+      const typeRootStat = await NFS.promises.stat(typeRootPath).catch(() =>
+        null
+      )
+      if (!typeRootStat) {
+        throw new Error(
+          `❌ TypeRoot path does not exist: "${typeRoot}" (checking base path: ${typeRootPath})`,
+        )
+      }
+
+      if (!typeRootStat.isDirectory()) {
+        throw new Error(
+          `❌ TypeRoot path is not a directory: "${typeRoot}" (resolved to: ${typeRootPath})`,
+        )
+      }
+
+      console.log(`  ✅ TypeRoot path exists: "${typeRoot}"`)
+    }
+  }
+
+  console.log(`  ✅ All paths in ${configFileName} are valid`)
 }
 
 function filterPackageJson(
@@ -618,12 +763,45 @@ async function copyPackageToPackagesDir(
     }
   }
 
+  // Copy tsconfig.json and jsconfig.json if they exist
+  const configFiles = ["tsconfig.json", "jsconfig.json"]
+  let copiedConfigFiles = 0
+  console.log(`🔧 Checking for config files...`)
+
+  for (const configFile of configFiles) {
+    const configSourcePath = NPath.join(packageDir, configFile)
+    const configTargetPath = NPath.join(targetDir, configFile)
+
+    if (NFS.existsSync(configSourcePath)) {
+      try {
+        await Bun.$`cp ${configSourcePath} ${configTargetPath}`
+        console.log(`  📄 Copied config file ${configFile}`)
+        copiedConfigFiles++
+
+        // Validate that all referenced paths in the config file exist
+        // This ensures config files don't reference non-existent external dependencies
+        try {
+          const configContent = NFS.readFileSync(configTargetPath, "utf-8")
+          const parsedConfig = JSON.parse(configContent)
+          await validateConfigPaths(parsedConfig, targetDir, configFile)
+        } catch (parseError) {
+          console.warn(
+            `⚠️  Could not parse or validate ${configFile}: ${parseError}`,
+          )
+          // Continue processing - config file was copied but validation skipped
+        }
+      } catch (error) {
+        console.error(`❌ Failed to copy or validate "${configFile}": ${error}`)
+      }
+    }
+  }
+
   // Always consider successful if we created the filtered package.json
   console.log(
     `✅ Successfully copied package "${packageName}" to ${PackagesDir}`,
   )
   console.log(
-    `📊 Copied ${copiedFiles} files/directories from "files" field + filtered package.json`,
+    `📊 Copied ${copiedFiles} files/directories from "files" field + ${copiedConfigFiles} config files + filtered package.json`,
   )
 
   return true
