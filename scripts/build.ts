@@ -154,13 +154,10 @@ function transformExportsField(
       ...valuePaths.map(v => NPath.parse(v).dir.substring(2)),
     ]
 
-    // Common source file patterns to check
     const sourceExtensions = [".js", ".ts", ".tsx", ".mjs"]
     const indexFiles = sourceExtensions.map(ext => `index${ext}`)
 
-    // First, check directories extracted from export values
     for (const dir of directories) {
-      // Check for source files in common patterns
       const patterns = [
         ...indexFiles.map(f => `./${dir}/src/${f}`),
         ...indexFiles.map(f => `./${dir}/${f}`),
@@ -235,7 +232,6 @@ function transformExportsField(
   }
 
   if (typeof exports === "string") {
-    // Simple string export
     const sourceFile = findSourceFile(".", exports)
     if (sourceFile) {
       console.log(
@@ -525,10 +521,6 @@ function filterPackageJson(
           originalExports,
           packageDir,
         )
-        console.log(
-          `📥 Transformed exports:`,
-          JSON.stringify(transformedExports, null, 2),
-        )
 
         filtered[field] = transformedExports
       } else if (field === "dependencies") {
@@ -600,16 +592,9 @@ async function getPackageInfo(): Promise<Array<PackageInfo>> {
     }
 
     // Use basename for simple packages, or construct name for nested packages
-    let directoryName: string
-    if (packagePath.includes("/packages/")) {
-      // For signals packages, use signals-core, signals-preact format
-      const parts = packagePath.split("/")
-      const parentDir = parts[parts.indexOf("packages") - 1]
-      const subPackage = NPath.basename(packagePath)
-      directoryName = `${parentDir}-${subPackage}`
-    } else {
-      directoryName = NPath.basename(packagePath)
-    }
+    const directoryName = packagePath.match(/\/([^/]+)\/packages\/([^/]+)$/)
+      ? `${RegExp.$1}-${RegExp.$2}`
+      : NPath.basename(packagePath)
 
     packageInfo.push({
       path: resolvedPath,
@@ -1518,11 +1503,11 @@ async function build() {
     console.error("Could not list final structure")
   }
 
-  // Resolve all relative imports in the copied files
   await resolveRelativeImports(packagesDirPath)
 
-  // Replace upstream imports with relative paths
   await replaceUpstreamImports(packagesDirPath, packageNameToDir)
+
+  await unmangle()
 
   // Final summary
   console.log(`\n📊 Final Summary:`)
@@ -1540,6 +1525,9 @@ async function build() {
 }
 
 async function unmangle() {
+  console.log("\n🎭 Starting unmangle process...")
+  console.log("━".repeat(50))
+
   const preactMangleConfig = await import("../upstream/preact/mangle.json")
 
   // $unmangled -> mangled
@@ -1555,6 +1543,10 @@ async function unmangle() {
   )
 
   const fileEdits = new Map<sg.SgRoot, sg.Edit[]>()
+  let totalFiles = 0
+  let totalReplacements = 0
+
+  console.log("🔍 Scanning files for mangled properties...")
 
   await sg.findInFiles(sg.Lang.TypeScript, {
     matcher: {
@@ -1596,24 +1588,24 @@ async function unmangle() {
     ],
   }, async (err, fileNodes) => {
     if (err) {
-      console.error(err)
+      console.error("❌ Error scanning files:", err)
       process.exit(1)
     }
 
     const filename = fileNodes[0]!.getRoot().filename()
-    console.log("Parsing\t", filename)
+    console.log("  📄 Scanning", filename)
+    totalFiles++
 
     fileNodes.forEach(node => {
       const text = node.text()
       const unmangled = mangledToUnmangled.get(text)
-      console.log(text)
-      if (text === "__e") {
-        console.log("THATS EEEE", text)
-      }
 
       if (!unmangled) {
         return
       }
+
+      console.log(`    🔄 Found mangled property: "${text}" → "${unmangled}"`)
+      totalReplacements++
 
       const edit = node.replace(unmangled)
 
@@ -1627,29 +1619,38 @@ async function unmangle() {
     })
   })
 
+  console.log(`\n✏️  Applying edits to ${fileEdits.size} files...`)
+
   for (const [root, edits] of fileEdits.entries()) {
     const output = root.root().commitEdits(edits)
     const filename = root.filename()
-    console.log("Editing\t", filename)
+
+    console.log(`  ✅ Applied ${edits.length} edits to`, filename)
+
     await Bun.write(filename, output)
   }
+
+  console.log("━".repeat(50))
+  console.log(`🎭 Unmangle process completed!`)
+  console.log(`  📊 Total files scanned: ${totalFiles}`)
+  console.log(`  ✏️  Total files modified: ${fileEdits.size}`)
+  console.log(`  🔄 Total replacements made: ${totalReplacements}`)
 }
 
 async function main() {
   const Commands = {
     build,
     unmangle,
+    help: () => {
+      console.log(
+        `Provide one of the following commands:`,
+        Object.keys(Commands).join(", "),
+      )
+      return process.exit(1)
+    },
   }
 
-  const [, , command, ...args] = process.argv
-
-  if (!command) {
-    console.log(
-      `Provide one of the following commands:`,
-      Object.keys(Commands).join(", "),
-    )
-    return process.exit(1)
-  }
+  const [, , command = "build", ...args] = process.argv
 
   const commandFn = Commands[command as keyof typeof Commands]
 

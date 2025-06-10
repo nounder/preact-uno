@@ -5,19 +5,12 @@
   "exports": {
     ".": "./index.ts"
   },
-  "dependencies": {
-    "@ast-grep/napi": "^0.38.5",
-    "@preact/signals": "file:./packages/signals-preact",
-    "@preact/signals-core": "file:./packages/signals-core",
-    "preact": "file:./packages/preact",
-    "preact-iso": "file:./packages/preact-iso",
-    "preact-render-to-string": "file:./packages/preact-render-to-string"
-  },
   "scripts": {
     "build": "bun scripts/build.ts"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@ast-grep/napi": "^0.38.5"
   },
   "peerDependencies": {
     "typescript": "^5"

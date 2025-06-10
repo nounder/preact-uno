@@ -1,13 +1,13 @@
 import {
+  render,
   signal,
   useComputed,
   useSignal,
-} from "@preact/signals"
-import { render } from "preact"
+} from "./index.ts"
 import {
   useEffect,
   useState,
-} from "preact/hooks"
+} from "./packages/preact/hooks/src/index.js"
 
 const State = signal({
   count: 0,
