@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 
+import * as sg from "@ast-grep/napi"
 import * as NFS from "node:fs"
 import * as NPath from "node:path"
 
@@ -1015,9 +1016,9 @@ async function resolveRelativeImports(packagesDir: string): Promise<void> {
       }
     } catch (error) {
       console.error(
-        `❌ Error processing ${
-          NPath.relative(packagesDir, filePath)
-        }: ${error}`,
+        `❌ Error processing`,
+        NPath.relative(packagesDir, filePath),
+        error,
       )
     }
   }
@@ -1432,9 +1433,9 @@ async function replaceUpstreamImports(
       }
     } catch (error) {
       console.error(
-        `❌ Error processing ${
-          NPath.relative(packagesDir, filePath)
-        }: ${error}`,
+        `❌ Error processing`,
+        NPath.relative(packagesDir, filePath),
+        error,
       )
     }
   }
@@ -1447,7 +1448,7 @@ async function replaceUpstreamImports(
 }
 
 // Main execution
-async function main() {
+async function build() {
   console.log(`🚀 Starting copy process for all packages to ${PackagesDir}`)
 
   // Get all package information
@@ -1538,8 +1539,128 @@ async function main() {
   }
 }
 
-// Run the script
-main().catch((error) => {
-  console.error("❌ Script failed:", error)
-  process.exit(1)
-})
+async function unmangle() {
+  const preactMangleConfig = await import("../upstream/preact/mangle.json")
+
+  // $unmangled -> mangled
+  // unmangled is prefixed with $
+  const unmangledToMangled = new Map(
+    Object.entries(preactMangleConfig.props.props).map(([key, value]) => [
+      key.replace(/^\$/, ""),
+      value,
+    ]),
+  )
+  const mangledToUnmangled = new Map(
+    unmangledToMangled.entries().map(([key, value]) => [value, key]),
+  )
+
+  const fileEdits = new Map<sg.SgRoot, sg.Edit[]>()
+
+  await sg.findInFiles(sg.Lang.TypeScript, {
+    matcher: {
+      rule: {
+        any: [
+          {
+            kind: "property_identifier",
+          },
+          // enum values
+          {
+            kind: "string_fragment",
+            inside: {
+              kind: "string",
+              inside: {
+                kind: "enum_assignment",
+              },
+            },
+          },
+          {
+            kind: "string_fragment",
+            inside: {
+              kind: "string",
+              inside: {
+                kind: "variable_declarator",
+              },
+            },
+          },
+        ],
+      },
+    },
+    paths: [
+      PackagesDir,
+    ],
+    languageGlobs: [
+      "*.ts",
+      "*.tsx",
+      "*.js",
+      "*.jsx",
+    ],
+  }, async (err, fileNodes) => {
+    if (err) {
+      console.error(err)
+      process.exit(1)
+    }
+
+    const filename = fileNodes[0]!.getRoot().filename()
+    console.log("Parsing\t", filename)
+
+    fileNodes.forEach(node => {
+      const text = node.text()
+      const unmangled = mangledToUnmangled.get(text)
+      console.log(text)
+      if (text === "__e") {
+        console.log("THATS EEEE", text)
+      }
+
+      if (!unmangled) {
+        return
+      }
+
+      const edit = node.replace(unmangled)
+
+      const root = node.getRoot()
+
+      if (!fileEdits.has(root)) {
+        fileEdits.set(root, [])
+      }
+
+      fileEdits.get(root)!.push(edit)
+    })
+  })
+
+  for (const [root, edits] of fileEdits.entries()) {
+    const output = root.root().commitEdits(edits)
+    const filename = root.filename()
+    console.log("Editing\t", filename)
+    await Bun.write(filename, output)
+  }
+}
+
+async function main() {
+  const Commands = {
+    build,
+    unmangle,
+  }
+
+  const [, , command, ...args] = process.argv
+
+  if (!command) {
+    console.log(
+      `Provide one of the following commands:`,
+      Object.keys(Commands).join(", "),
+    )
+    return process.exit(1)
+  }
+
+  const commandFn = Commands[command as keyof typeof Commands]
+
+  if (!commandFn) {
+    console.error(`❌ Unknown command: ${command}`)
+    return process.exit(1)
+  }
+
+  await commandFn()
+}
+
+if (import.meta.main) {
+  main()
+}
