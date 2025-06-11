@@ -1,0 +1,69 @@
+{
+  "name": "preact",
+  "version": "10.26.8",
+  "description": "Fast 3kb React-compatible Virtual DOM library.",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.js"
+    },
+    "./compat": {
+      "types": "./compat/src/index.d.ts",
+      "import": "./compat/src/index.js"
+    },
+    "./debug": {
+      "types": "./debug/src/index.d.ts",
+      "import": "./debug/src/index.js"
+    },
+    "./devtools": {
+      "types": "./devtools/src/index.d.ts",
+      "import": "./devtools/src/index.js"
+    },
+    "./hooks": {
+      "types": "./hooks/src/index.d.ts",
+      "import": "./hooks/src/index.js"
+    },
+    "./test-utils": {
+      "types": "./test-utils/src/index.d.ts",
+      "import": "./test-utils/src/index.js"
+    },
+    "./jsx-runtime": {
+      "types": "./jsx-runtime/src/index.d.ts",
+      "import": "./jsx-runtime/src/index.js"
+    },
+    "./jsx-dev-runtime": {
+      "types": "./jsx-runtime/src/index.d.ts",
+      "import": "./jsx-runtime/src/index.js"
+    },
+    "./compat/client": {
+      "types": "./compat/client.d.ts",
+      "import": "./compat/src/index.js"
+    },
+    "./compat/server": {
+      "import": "./compat/src/index.js"
+    },
+    "./compat/jsx-runtime": {
+      "types": "./jsx-runtime/src/index.d.ts",
+      "import": "./jsx-runtime/src/index.js"
+    },
+    "./compat/jsx-dev-runtime": {
+      "types": "./jsx-runtime/src/index.d.ts",
+      "import": "./jsx-runtime/src/index.js"
+    },
+    "./compat/scheduler": {
+      "import": "./compat/src/index.js"
+    },
+    "./package.json": "./package.json",
+    "./compat/package.json": "./compat/package.json",
+    "./debug/package.json": "./debug/package.json",
+    "./devtools/package.json": "./devtools/package.json",
+    "./hooks/package.json": "./hooks/package.json",
+    "./test-utils/package.json": "./test-utils/package.json",
+    "./jsx-runtime/package.json": "./jsx-runtime/package.json"
+  },
+  "license": "MIT",
+  "authors": [
+    "The Preact Authors (https://github.com/preactjs/preact/contributors)"
+  ],
+  "homepage": "https://preactjs.com"
+}

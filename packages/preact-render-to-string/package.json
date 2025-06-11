@@ -1,0 +1,26 @@
+{
+  "name": "preact-render-to-string",
+  "version": "6.5.13",
+  "description": "Render JSX to an HTML string, with support for Preact components.",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.js"
+    },
+    "./jsx": {
+      "types": "./jsx.d.ts",
+      "import": "./jsx.js"
+    },
+    "./stream": {
+      "types": "./src/stream.d.ts",
+      "import": "./src/stream.js"
+    },
+    "./stream-node": {
+      "types": "./src/stream-node.d.ts",
+      "import": "./src/stream-node.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/preactjs/preact-render-to-string"
+}

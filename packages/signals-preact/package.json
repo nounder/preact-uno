@@ -1,0 +1,20 @@
+{
+  "name": "@preact/signals",
+  "version": "2.2.0",
+  "license": "MIT",
+  "description": "Manage state with style in Preact",
+  "authors": [
+    "The Preact Authors (https://github.com/preactjs/signals/contributors)"
+  ],
+  "homepage": "https://preactjs.com",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./utils": {
+      "types": "./utils/src/index.ts",
+      "import": "./utils/src/index.ts"
+    }
+  }
+}

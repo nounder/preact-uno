@@ -1,0 +1,13 @@
+{
+  "name": "preact-iso",
+  "version": "2.9.2",
+  "exports": {
+    ".": "./src/index.js",
+    "./router": "./src/index.js",
+    "./lazy": "./src/index.js",
+    "./prerender": "./src/index.js",
+    "./hydrate": "./src/index.js"
+  },
+  "license": "MIT",
+  "description": "Isomorphic utilities for Preact"
+}
