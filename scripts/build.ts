@@ -4,7 +4,7 @@ import * as sg from "@ast-grep/napi"
 import * as NFS from "node:fs"
 import * as NPath from "node:path"
 
-const Packages = [
+const UpstreamPackages = [
   "./upstream/preact",
   "./upstream/preact-iso",
   "./upstream/preact-render-to-string",
@@ -559,7 +559,7 @@ function filterPackageJson(
 async function getPackageInfo(): Promise<Array<PackageInfo>> {
   const packageInfo: Array<PackageInfo> = []
 
-  for (const packagePath of Packages) {
+  for (const packagePath of UpstreamPackages) {
     const resolvedPath = NPath.resolve(packagePath)
 
     if (!NFS.existsSync(resolvedPath)) {
@@ -1507,7 +1507,7 @@ async function build() {
 
   await replaceUpstreamImports(packagesDirPath, packageNameToDir)
 
-  await unmangle()
+  await mangle()
 
   // Final summary
   console.log(`\n📊 Final Summary:`)
@@ -1524,8 +1524,12 @@ async function build() {
   }
 }
 
-async function unmangle() {
-  console.log("\n🎭 Starting unmangle process...")
+/**
+ * Praect mangles its properties during build and all 3rd parties are expected to use them.
+ * Hopefully they will skip this in v11.
+ */
+async function mangle() {
+  console.log("\n🎭 Starting mangle process...")
   console.log("━".repeat(50))
 
   const preactMangleConfig = await import("../upstream/preact/mangle.json")
@@ -1538,15 +1542,16 @@ async function unmangle() {
       value,
     ]),
   )
-  const mangledToUnmangled = new Map(
-    unmangledToMangled.entries().map(([key, value]) => [value, key]),
-  )
 
   const fileEdits = new Map<sg.SgRoot, sg.Edit[]>()
   let totalFiles = 0
   let totalReplacements = 0
 
-  console.log("🔍 Scanning files for mangled properties...")
+  const preactPackageDir = NPath.join(PackagesDir, "preact")
+
+  console.log(
+    `🔍 Scanning files in ${preactPackageDir} for properties to mangle...`,
+  )
 
   await sg.findInFiles(sg.Lang.TypeScript, {
     matcher: {
@@ -1578,7 +1583,7 @@ async function unmangle() {
       },
     },
     paths: [
-      PackagesDir,
+      preactPackageDir,
     ],
     languageGlobs: [
       "*.ts",
@@ -1598,16 +1603,16 @@ async function unmangle() {
 
     fileNodes.forEach(node => {
       const text = node.text()
-      const unmangled = mangledToUnmangled.get(text)
+      const mangled = unmangledToMangled.get(text)
 
-      if (!unmangled) {
+      if (!mangled) {
         return
       }
 
-      console.log(`    🔄 Found mangled property: "${text}" → "${unmangled}"`)
+      console.log(`    🔄 Found unmangled property: "${text}" → "${mangled}"`)
       totalReplacements++
 
-      const edit = node.replace(unmangled)
+      const edit = node.replace(mangled)
 
       const root = node.getRoot()
 
@@ -1631,7 +1636,7 @@ async function unmangle() {
   }
 
   console.log("━".repeat(50))
-  console.log(`🎭 Unmangle process completed!`)
+  console.log(`🎭 Mangle process completed!`)
   console.log(`  📊 Total files scanned: ${totalFiles}`)
   console.log(`  ✏️  Total files modified: ${fileEdits.size}`)
   console.log(`  🔄 Total replacements made: ${totalReplacements}`)
@@ -1640,7 +1645,7 @@ async function unmangle() {
 async function main() {
   const Commands = {
     build,
-    unmangle,
+    mangle,
     help: () => {
       console.log(
         `Provide one of the following commands:`,
