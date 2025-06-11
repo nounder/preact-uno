@@ -60,6 +60,12 @@ interface TypeScriptConfig {
   [key: string]: any
 }
 
+/**
+ * Extracts unique, non-empty file paths from an array of strings.
+ * It also removes the leading './' from the paths.
+ * @param files - An array of file paths.
+ * @returns A new array with unique and cleaned file paths.
+ */
 function extractFilePaths(files: string[]): string[] {
   const paths: Set<string> = new Set()
 
@@ -72,6 +78,11 @@ function extractFilePaths(files: string[]): string[] {
   return Array.from(paths)
 }
 
+/**
+ * Replaces 'workspace:' protocol dependencies with relative 'file:' paths.
+ * This is used to convert monorepo workspace dependencies into local file system dependencies,
+ * which is useful when creating a distributable version of the packages.
+ */
 function replaceWorkspaceDependencies(
   dependencies: Record<string, string> | undefined,
   packageNameToDir: Map<string, string>,
@@ -116,6 +127,12 @@ function replaceWorkspaceDependencies(
   return result
 }
 
+/**
+ * Transforms the `exports` field of a package.json to point to source files of build artifacts
+ *
+ * @param exports - The `exports` field from a package.json.
+ * @param packageDir - The root directory of the package.
+ */
 function transformExportsField(
   exports: string | Record<string, any>,
   packageDir: string,
@@ -492,6 +509,10 @@ async function validateConfigPaths(
   console.log(`  ✅ All paths in ${configFileName} are valid`)
 }
 
+/**
+ * Filters a package.json file, keeping only allowed fields and transforming specific fields
+ * like dependencies and exports for the new package structure.
+ */
 function filterPackageJson(
   packageJson: PackageJson,
   packageDir: string,
@@ -556,6 +577,9 @@ function filterPackageJson(
   return filtered
 }
 
+/**
+ * Reads package.json of all upstream packages.
+ */
 async function getPackageInfo(): Promise<Array<PackageInfo>> {
   const packageInfo: Array<PackageInfo> = []
 
@@ -611,6 +635,9 @@ async function getPackageInfo(): Promise<Array<PackageInfo>> {
   return packageInfo
 }
 
+/**
+ * Cleans up the existing `packages` directory to ensure a fresh build.
+ */
 async function cleanupExistingArtifacts() {
   const packagesDirPath = NPath.resolve(PackagesDir)
 
@@ -626,6 +653,9 @@ async function cleanupExistingArtifacts() {
   console.log(`✅ Cleanup completed`)
 }
 
+/**
+ * Copies an upstream to packages directory honoring package.json & tsconfig.json paths.
+ */
 async function copyPackageToPackagesDir(
   packagePath: string,
   packageName: string,
@@ -888,7 +918,6 @@ async function resolveRelativeImports(packagesDir: string): Promise<void> {
               ".js",
               ".jsx",
               ".mjs",
-              ".cjs",
               ".d.ts",
             ]
             for (const ext of extensions) {
@@ -908,7 +937,6 @@ async function resolveRelativeImports(packagesDir: string): Promise<void> {
                 "/index.js",
                 "/index.jsx",
                 "/index.mjs",
-                "/index.cjs",
               ]
               for (const indexExt of indexExtensions) {
                 try {
@@ -932,15 +960,6 @@ async function resolveRelativeImports(packagesDir: string): Promise<void> {
           if (!relativePath.startsWith(".")) {
             relativePath = "./" + relativePath
           }
-
-          // Keep file extensions - don't remove them
-          // const ext = NPath.extname(relativePath).toLowerCase()
-          // if (
-          //   [".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"].includes(ext)
-          //   && !relativePath.endsWith(".d.ts")
-          // ) {
-          //   relativePath = relativePath.slice(0, -ext.length)
-          // }
 
           // Only replace if the resolved path is different
           if (relativePath !== imp.path) {
@@ -1228,43 +1247,6 @@ async function replaceUpstreamImports(
                   }
                 }
               }
-
-              // If not found in exports, try common patterns
-              if (!resolvedPath) {
-                // Try different file extensions and patterns
-                const patterns = [
-                  // Direct file match
-                  subpathWithoutSlash,
-                  `${subpathWithoutSlash}.ts`,
-                  `${subpathWithoutSlash}.tsx`,
-                  `${subpathWithoutSlash}.js`,
-                  `${subpathWithoutSlash}.jsx`,
-                  `${subpathWithoutSlash}.mjs`,
-                  `${subpathWithoutSlash}.cjs`,
-                  // Index files in subdirectory
-                  `${subpathWithoutSlash}/index.ts`,
-                  `${subpathWithoutSlash}/index.tsx`,
-                  `${subpathWithoutSlash}/index.js`,
-                  `${subpathWithoutSlash}/index.jsx`,
-                  `${subpathWithoutSlash}/index.mjs`,
-                  `${subpathWithoutSlash}/index.cjs`,
-                  // Source directory patterns
-                  `${subpathWithoutSlash}/src/index.ts`,
-                  `${subpathWithoutSlash}/src/index.tsx`,
-                  `${subpathWithoutSlash}/src/index.js`,
-                  `${subpathWithoutSlash}/src/index.jsx`,
-                ]
-
-                for (const pattern of patterns) {
-                  const testPath = NPath.join(targetPackageDir, pattern)
-                  if (
-                    NFS.existsSync(testPath) && NFS.statSync(testPath).isFile()
-                  ) {
-                    resolvedPath = testPath
-                    break
-                  }
-                }
-              }
             } else {
               // For main package imports, try to resolve using package.json exports or main field
               const targetPackageJsonPath = NPath.join(
@@ -1297,28 +1279,6 @@ async function replaceUpstreamImports(
                         targetPackageDir,
                         exportValue.browser,
                       )
-                    }
-                  }
-                }
-
-                // Fallback to common entry points
-                if (!resolvedPath) {
-                  const entryPoints = [
-                    "./src/index.ts",
-                    "./src/index.tsx",
-                    "./src/index.js",
-                    "./src/index.jsx",
-                    "./index.ts",
-                    "./index.tsx",
-                    "./index.js",
-                    "./index.jsx",
-                  ]
-
-                  for (const entry of entryPoints) {
-                    const testPath = NPath.join(targetPackageDir, entry)
-                    if (NFS.existsSync(testPath)) {
-                      resolvedPath = testPath
-                      break
                     }
                   }
                 }
