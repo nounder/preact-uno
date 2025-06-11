@@ -12,7 +12,6 @@
       "types": "./packages/preact/jsx-runtime/src/index.d.ts",
       "import": "./packages/preact/jsx-runtime/src/index.js"
     },
-    "./signals": "./packages/signals-preact/src/index.ts",
     "./compat": {
       "types": "./packages/preact/compat/src/index.d.ts",
       "import": "./packages/preact/compat/src/index.js"
@@ -20,6 +19,13 @@
     "./test-utils": {
       "types": "./packages/preact/test-utils/src/index.d.ts",
       "import": "./packages/preact/test-utils/src/index.js"
+    },
+
+    "./signals": "./packages/signals-preact/src/index.ts",
+    
+    "./iso": {
+      "types": "./packages/preact-iso/src/index.d.ts",
+      "import": "./packages/preact-iso/src/index.js"
     }
   },
   "scripts": {
