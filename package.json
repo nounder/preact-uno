@@ -1,9 +1,9 @@
 {
   "name": "preact-uno",
   "type": "module",
-  "private": false,
   "exports": {
     ".": "./index.ts",
+
     "./jsx-runtime": {
       "types": "./packages/preact/jsx-runtime/src/index.d.ts",
       "import": "./packages/preact/jsx-runtime/src/index.js"
@@ -12,21 +12,30 @@
       "types": "./packages/preact/jsx-runtime/src/index.d.ts",
       "import": "./packages/preact/jsx-runtime/src/index.js"
     },
+    
+    "./hooks": {
+      "types": "./packages/preact/hooks/src/index.d.ts",
+      "import": "./packages/preact/hooks/src/index.js"
+    },
+
     "./compat": {
       "types": "./packages/preact/compat/src/index.d.ts",
       "import": "./packages/preact/compat/src/index.js"
     },
+
     "./test-utils": {
       "types": "./packages/preact/test-utils/src/index.d.ts",
       "import": "./packages/preact/test-utils/src/index.js"
     },
 
-    "./signals": "./packages/signals-preact/src/index.ts",
+    "./signals": "./signals.ts",
     
     "./iso": {
       "types": "./packages/preact-iso/src/index.d.ts",
       "import": "./packages/preact-iso/src/index.js"
-    }
+    },
+
+    "./render": "./render.ts"
   },
   "scripts": {
     "build": "bun scripts/build.ts"
