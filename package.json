@@ -3,7 +3,24 @@
   "type": "module",
   "private": false,
   "exports": {
-    ".": "./index.ts"
+    ".": "./index.ts",
+    "./jsx-runtime": {
+      "types": "./packages/preact/jsx-runtime/src/index.d.ts",
+      "import": "./packages/preact/jsx-runtime/src/index.js"
+    },
+    "./jsx-dev-runtime": {
+      "types": "./packages/preact/jsx-runtime/src/index.d.ts",
+      "import": "./packages/preact/jsx-runtime/src/index.js"
+    },
+    "./signals": "./packages/signals-preact/src/index.ts",
+    "./compat": {
+      "types": "./packages/preact/compat/src/index.d.ts",
+      "import": "./packages/preact/compat/src/index.js"
+    },
+    "./test-utils": {
+      "types": "./packages/preact/test-utils/src/index.d.ts",
+      "import": "./packages/preact/test-utils/src/index.js"
+    }
   },
   "scripts": {
     "build": "bun scripts/build.ts"
